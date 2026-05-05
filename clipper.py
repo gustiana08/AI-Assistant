@@ -32,8 +32,9 @@ def parse_timestamp(ts: str) -> int:
     raise ValueError(f"Format timestamp tidak valid: '{ts}'. Gunakan MM:SS atau HH:MM:SS")
 
 
-def format_duration(seconds: int) -> str:
+def format_duration(seconds) -> str:
     """Format seconds to human-readable duration."""
+    seconds = int(seconds)
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     if h > 0:
@@ -71,7 +72,7 @@ def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:
     if duration > 600:
         raise ValueError("Durasi clip maksimal 10 menit.")
 
-    clip_id = f"clip_{start_sec}_{end_sec}_{os.getpid()}"
+    clip_id = f"clip_{start_sec}_{end_sec}_{os.getpid()}_{id(object())}"
     output_path = os.path.join(DOWNLOADS_DIR, f"{clip_id}.mp4")
 
     with tempfile.TemporaryDirectory() as tmpdir:
