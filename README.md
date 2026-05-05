@@ -1,60 +1,82 @@
-# AI Assistant
+# YouTube Clip Bot — Telegram AI Agent
 
-Asisten cerdas berbasis web yang dibangun dengan **React + Vite + Tailwind CSS**. Project ini sepenuhnya client-side (tanpa backend) dengan AI agent yang bisa menjawab pertanyaan, menghitung, menerjemahkan, dan memberikan tips.
+Bot Telegram untuk memotong (clip) video YouTube secara otomatis. Kirim link YouTube + timestamp, bot akan download, potong, dan kirim hasilnya langsung ke chat Telegram.
 
 ## Fitur
 
-- **Percakapan Natural** — mendukung bahasa Indonesia dan Inggris
-- **Multi-Skill Agent** — coding help, matematika, terjemahan, produktivitas
-- **Smart Calculation** — hitung persentase dan operasi matematika di chat
-- **Terjemahan** — terjemahkan frasa umum ID/EN
-- **Motivasi & Tips** — kata-kata motivasi dan tips produktivitas
-- **Dark Mode** — desain modern dengan tema gelap
-- **Responsive** — mobile-friendly
+- **Clip Video YouTube** — potong video berdasarkan timestamp mulai & akhir
+- **Auto-detect Link** — kirim link YouTube dan bot otomatis tampilkan info video
+- **Format Fleksibel** — support format waktu `MM:SS`, `HH:MM:SS`, atau detik
+- **Optimasi Telegram** — video di-encode ulang agar ringan dan support streaming
+- **Bahasa Indonesia** — semua pesan bot dalam bahasa Indonesia
 
 ## Tech Stack
 
-- **React 19** + **Vite 8**
-- **Tailwind CSS 4**
-- **React Router 7**
-- **ESLint** untuk linting
+- **Python 3.12+**
+- **python-telegram-bot** — library Telegram Bot API
+- **yt-dlp** — download video YouTube
+- **ffmpeg** — potong dan encode video
 
 ## Getting Started
 
+### Prerequisites
+
+- Python 3.12+
+- ffmpeg (`sudo apt install ffmpeg`)
+- Telegram Bot Token dari [@BotFather](https://t.me/BotFather)
+
+### Install
+
 ```bash
+# Clone repo
+git clone https://github.com/gustiana08/AI-Assistant.git
+cd AI-Assistant
+
 # Install dependencies
-npm install
+pip install -r requirements.txt
 
-# Jalankan dev server (default: http://localhost:5173)
-npm run dev
+# Set bot token
+export TELEGRAM_BOT_TOKEN='your-token-here'
 
-# Build production
-npm run build
-
-# Preview build production
-npm run preview
-
-# Lint
-npm run lint
+# Jalankan bot
+python bot.py
 ```
+
+## Cara Pakai
+
+1. Buka bot di Telegram
+2. Kirim `/start` untuk memulai
+3. Clip video dengan format:
+   ```
+   /clip <URL_YOUTUBE> <mulai> <akhir>
+   ```
+4. Contoh:
+   ```
+   /clip https://youtu.be/dQw4w9WgXcQ 0:30 1:00
+   /clip https://youtube.com/watch?v=abc123 1:20 2:45
+   ```
+
+### Format Waktu
+
+| Format    | Contoh   | Artinya       |
+| --------- | -------- | ------------- |
+| `MM:SS`   | `1:30`   | 1 menit 30 detik |
+| `HH:MM:SS`| `1:05:30`| 1 jam 5 menit 30 detik |
+| Detik     | `90`     | 90 detik      |
+
+### Batasan
+
+- Durasi clip maksimal: **10 menit**
+- Ukuran file maksimal: **50 MB** (limit Telegram)
+- Resolusi: otomatis dipilih max **720p**
 
 ## Struktur Project
 
 ```
-src/
-├── agent/             # AI agent engine
-│   ├── aiAgent.js     # Core processing & response generation
-│   └── knowledgeBase.js  # Knowledge base & smart responses
-├── components/        # Komponen reusable
-│   ├── ChatPanel.jsx  # Panel chat utama
-│   ├── Footer.jsx     # Footer
-│   └── Navbar.jsx     # Navigation bar
-├── pages/             # Halaman
-│   ├── Chat.jsx       # /chat — halaman chat
-│   └── Home.jsx       # / — landing page
-├── App.jsx            # Routing utama
-├── index.css          # Tailwind + custom CSS
-└── main.jsx           # Entry point
+├── bot.py              # Main Telegram bot
+├── clipper.py           # YouTube download & clip engine
+├── requirements.txt     # Python dependencies
+└── README.md
 ```
 
 ## License
