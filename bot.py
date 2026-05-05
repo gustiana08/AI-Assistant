@@ -197,7 +197,7 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def _escape_md(text: str) -> str:
     """Escape special characters for MarkdownV2."""
-    special = r"_*[]()~`>#+-=|{}.!"
+    special = r"\/_*[]()~`>#+-=|{}.!"
     return "".join(f"\\{c}" if c in special else c for c in str(text))
 
 

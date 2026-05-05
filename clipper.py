@@ -117,6 +117,8 @@ def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
+            if os.path.exists(output_path):
+                os.remove(output_path)
             raise RuntimeError(f"FFmpeg error: {result.stderr[:500]}")
 
     if not os.path.exists(output_path):
