@@ -57,6 +57,79 @@ def extract_video_info(url: str) -> dict:
         "uploader": info.get("uploader", "Unknown"),
         "thumbnail": info.get("thumbnail", ""),
         "webpage_url": info.get("webpage_url", url),
+        "heatmap": info.get("heatmap"),
+    }
+
+
+def analyze_most_replayed(url: str, top_n: int = 5) -> dict:
+    """Analyze a YouTube video to find the most replayed segments.
+
+    Returns video info and a list of top replayed regions with timestamps.
+    """
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    heatmap = info.get("heatmap")
+    if not heatmap:
+        return {
+            "title": info.get("title", "Unknown"),
+            "duration": info.get("duration", 0),
+            "regions": [],
+        }
+
+    # Find threshold: segments above average are "hot"
+    values = [entry["value"] for entry in heatmap]
+    avg_value = sum(values) / len(values)
+    threshold = avg_value * 1.5
+
+    # Group adjacent hot segments into regions
+    regions = []
+    current_region = None
+    for entry in heatmap:
+        if entry["value"] >= threshold:
+            if current_region is None:
+                current_region = {
+                    "start": entry["start_time"],
+                    "end": entry["end_time"],
+                    "peak_value": entry["value"],
+                    "total_value": entry["value"],
+                    "count": 1,
+                }
+            else:
+                current_region["end"] = entry["end_time"]
+                current_region["total_value"] += entry["value"]
+                current_region["count"] += 1
+                if entry["value"] > current_region["peak_value"]:
+                    current_region["peak_value"] = entry["value"]
+        else:
+            if current_region is not None:
+                current_region["avg_value"] = current_region["total_value"] / current_region["count"]
+                regions.append(current_region)
+                current_region = None
+
+    if current_region is not None:
+        current_region["avg_value"] = current_region["total_value"] / current_region["count"]
+        regions.append(current_region)
+
+    # Sort by peak value descending and take top N
+    regions.sort(key=lambda r: r["peak_value"], reverse=True)
+    top_regions = regions[:top_n]
+
+    # Round timestamps to whole seconds
+    for region in top_regions:
+        region["start"] = int(region["start"])
+        region["end"] = int(region["end"])
+
+    return {
+        "title": info.get("title", "Unknown"),
+        "duration": info.get("duration", 0),
+        "uploader": info.get("uploader", "Unknown"),
+        "regions": top_regions,
     }
 
 

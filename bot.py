@@ -15,6 +15,7 @@ from telegram.ext import (
 )
 
 from clipper import (
+    analyze_most_replayed,
     cleanup_file,
     download_and_clip,
     extract_video_info,
@@ -48,6 +49,8 @@ HELP_TEXT = (
     "*Batasan:*\n"
     "• Maksimal durasi clip: 10 menit\n"
     "• Maksimal ukuran file: 50MB\n\n"
+    "*Analisis:*\n"
+    "Kirim `/analyze <URL>` untuk melihat bagian video yang paling banyak diputar\\!\n\n"
     "Atau cukup kirim link YouTube dan aku akan tanya detail clip\\-nya\\!"
 )
 
@@ -167,6 +170,71 @@ async def clip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             cleanup_file(clip_path)
 
 
+async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /analyze command — find most replayed segments."""
+    if not context.args or len(context.args) < 1:
+        await update.message.reply_text(
+            "\u26a0\ufe0f Format: `/analyze <URL>`\n"
+            "Contoh: `/analyze https://youtu.be/dQw4w9WgXcQ`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+
+    if not YOUTUBE_RE.search(url):
+        await update.message.reply_text("\u274c URL YouTube tidak valid. Cek lagi link-nya.")
+        return
+
+    status_msg = await update.message.reply_text("\U0001f50d Menganalisis video... Ini mungkin butuh beberapa detik.")
+
+    try:
+        result = analyze_most_replayed(url)
+    except Exception as e:
+        logger.error("Analyze failed: %s", e)
+        await status_msg.edit_text("\u274c Gagal menganalisis video. Pastikan URL valid dan video tersedia.")
+        return
+
+    title = result["title"]
+    duration = result["duration"]
+    regions = result["regions"]
+
+    if not regions:
+        await status_msg.edit_text(
+            f"\U0001f4b9 *{_escape_md(title)}*\n"
+            f"\u23f1 Durasi: {_escape_md(format_duration(duration))}\n\n"
+            f"\u274c Data 'most replayed' tidak tersedia untuk video ini\\.",
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    lines = [
+        f"\U0001f4ca *{_escape_md(title)}*\n",
+        f"\u23f1 Durasi: {_escape_md(format_duration(duration))}\n\n",
+        f"\U0001f525 *Bagian paling banyak diputar:*\n\n",
+    ]
+
+    for i, region in enumerate(regions, 1):
+        start_str = format_duration(region["start"])
+        end_str = format_duration(region["end"])
+        peak = region["peak_value"]
+        bar_len = int(peak * 10)
+        bar = "\u2588" * bar_len + "\u2591" * (10 - bar_len)
+        lines.append(
+            f"{i}\\. `{start_str} \u2192 {end_str}` {bar} {_escape_md(f'{peak:.0%}')}\n"
+        )
+        lines.append(
+            f"   \u27a1 `/clip {url} {start_str} {end_str}`\n\n"
+        )
+
+    lines.append("Klik salah satu command `/clip` di atas untuk langsung clip\\!")
+
+    await status_msg.edit_text(
+        "".join(lines),
+        parse_mode="MarkdownV2",
+    )
+
+
 async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle messages that contain a YouTube link (without /clip command)."""
     text = update.message.text or ""
@@ -214,6 +282,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("clip", clip_command))
+    app.add_handler(CommandHandler("analyze", analyze_command))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_youtube_link)
     )
