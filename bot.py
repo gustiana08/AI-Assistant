@@ -187,8 +187,8 @@ async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"👤 {_escape_md(info['uploader'])}\n"
             f"⏱ Durasi: {_escape_md(duration_str)}\n\n"
             f"Mau clip video ini? Gunakan:\n"
-            f"`/clip {_escape_md(url)} <mulai> <akhir>`\n\n"
-            f"Contoh: `/clip {_escape_md(url)} 0:30 1:00`",
+            f"`/clip {url} <mulai> <akhir>`\n\n"
+            f"Contoh: `/clip {url} 0:30 1:00`",
             parse_mode="MarkdownV2",
         )
     except Exception as e:

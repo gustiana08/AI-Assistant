@@ -79,7 +79,7 @@ def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:
 
         # Download with yt-dlp, selecting a format that fits Telegram limits
         ydl_opts = {
-            "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             "outtmpl": temp_video,
             "quiet": True,
             "no_warnings": True,
