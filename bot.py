@@ -141,9 +141,8 @@ async def clip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # Send clip
-    await status_msg.edit_text("📤 Mengirim clip...")
-
     try:
+        await status_msg.edit_text("📤 Mengirim clip...")
         file_size_mb = os.path.getsize(clip_path) / (1024 * 1024)
         caption = (
             f"🎬 {info['title']}\n"
