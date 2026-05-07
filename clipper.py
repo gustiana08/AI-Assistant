@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import tempfile
+import uuid
 
 import yt_dlp
 
@@ -53,7 +54,7 @@ def extract_video_info(url: str) -> dict:
         info = ydl.extract_info(url, download=False)
     return {
         "title": info.get("title", "Unknown"),
-        "duration": info.get("duration", 0),
+        "duration": info.get("duration") or 0,
         "uploader": info.get("uploader", "Unknown"),
         "thumbnail": info.get("thumbnail", ""),
         "webpage_url": info.get("webpage_url", url),
@@ -78,7 +79,7 @@ def analyze_most_replayed(url: str, top_n: int = 5) -> dict:
     if not heatmap:
         return {
             "title": info.get("title", "Unknown"),
-            "duration": info.get("duration", 0),
+            "duration": info.get("duration") or 0,
             "regions": [],
         }
 
@@ -127,7 +128,7 @@ def analyze_most_replayed(url: str, top_n: int = 5) -> dict:
 
     return {
         "title": info.get("title", "Unknown"),
-        "duration": info.get("duration", 0),
+        "duration": info.get("duration") or 0,
         "uploader": info.get("uploader", "Unknown"),
         "regions": top_regions,
     }
@@ -145,7 +146,7 @@ def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:
     if duration > 600:
         raise ValueError("Durasi clip maksimal 10 menit.")
 
-    clip_id = f"clip_{start_sec}_{end_sec}_{os.getpid()}_{id(object())}"
+    clip_id = f"clip_{start_sec}_{end_sec}_{os.getpid()}_{uuid.uuid4().hex}"
     output_path = os.path.join(DOWNLOADS_DIR, f"{clip_id}.mp4")
 
     with tempfile.TemporaryDirectory() as tmpdir:
