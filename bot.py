@@ -140,7 +140,17 @@ async def clip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     except Exception as e:
         logger.error("Clip failed: %s", e)
-        await status_msg.edit_text("❌ Gagal membuat clip. Coba lagi nanti.")
+        err_msg = str(e)
+        if "Sign in" in err_msg or "confirm you're not a bot" in err_msg:
+            await status_msg.edit_text(
+                "❌ YouTube memblokir akses dari server ini\\."
+                " Video ini butuh *cookies* YouTube\\."
+                "\n\nLetakkan file `cookies.txt` \\(format Netscape\\)"
+                " di folder bot untuk bypass\\.",
+                parse_mode="MarkdownV2",
+            )
+        else:
+            await status_msg.edit_text("❌ Gagal membuat clip. Coba lagi nanti.")
         return
 
     # Send clip
@@ -192,7 +202,17 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         result = analyze_most_replayed(url)
     except Exception as e:
         logger.error("Analyze failed: %s", e)
-        await status_msg.edit_text("\u274c Gagal menganalisis video. Pastikan URL valid dan video tersedia.")
+        err_msg = str(e)
+        if "Sign in" in err_msg or "confirm you're not a bot" in err_msg:
+            await status_msg.edit_text(
+                "❌ YouTube memblokir akses dari server ini\\."
+                " Video ini butuh *cookies* YouTube\\."
+                "\n\nLetakkan file `cookies.txt` \\(format Netscape\\)"
+                " di folder bot untuk bypass\\.",
+                parse_mode="MarkdownV2",
+            )
+        else:
+            await status_msg.edit_text("❌ Gagal menganalisis video. Pastikan URL valid dan video tersedia.")
         return
 
     title = result["title"]

@@ -23,6 +23,9 @@ env/
 *.swp
 *.swo
 
+# YouTube cookies (sensitive)
+cookies.txt
+
 # Downloads / temp
 downloads/
 clips/

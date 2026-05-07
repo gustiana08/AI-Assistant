@@ -11,6 +11,19 @@ import yt_dlp
 DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
+
+
+def _base_opts() -> dict:
+    """Return common yt-dlp options, including cookies if available."""
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+    }
+    if os.path.isfile(COOKIES_FILE):
+        opts["cookiefile"] = COOKIES_FILE
+    return opts
+
 
 def parse_timestamp(ts: str) -> int:
     """Parse timestamp string to seconds. Supports HH:MM:SS, MM:SS, or raw seconds."""
@@ -45,11 +58,8 @@ def format_duration(seconds) -> str:
 
 def extract_video_info(url: str) -> dict:
     """Extract video metadata without downloading."""
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-    }
+    opts = _base_opts()
+    opts["extract_flat"] = False
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return {
@@ -67,11 +77,8 @@ def analyze_most_replayed(url: str, top_n: int = 5) -> dict:
 
     Returns video info and a list of top replayed regions with timestamps.
     """
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-    }
+    opts = _base_opts()
+    opts["extract_flat"] = False
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -153,16 +160,15 @@ def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:
         temp_video = os.path.join(tmpdir, "source.mp4")
 
         # Download with yt-dlp, selecting a format that fits Telegram limits
-        ydl_opts = {
+        ydl_opts = _base_opts()
+        ydl_opts.update({
             "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             "outtmpl": temp_video,
-            "quiet": True,
-            "no_warnings": True,
             "merge_output_format": "mp4",
             # Download only the needed section for efficiency
             "download_ranges": yt_dlp.utils.download_range_func(None, [(start_sec, end_sec)]),
             "force_keyframes_at_cuts": True,
-        }
+        })
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
