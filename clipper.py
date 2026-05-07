@@ -1,11 +1,14 @@
 """YouTube video downloader and clipper using yt-dlp + ffmpeg."""
 
+import json
 import os
 import re
 import subprocess
 import tempfile
 import uuid
 
+import numpy as np
+import whisper
 import yt_dlp
 
 DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
@@ -139,6 +142,186 @@ def analyze_most_replayed(url: str, top_n: int = 5) -> dict:
         "uploader": info.get("uploader") or "Unknown",
         "regions": top_regions,
     }
+
+
+def _download_audio(url: str, out_path: str) -> str:
+    """Download audio only from a YouTube video. Returns path to audio file."""
+    ydl_opts = _base_opts()
+    ydl_opts.update({
+        "format": "bestaudio/best",
+        "outtmpl": out_path,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "64",
+        }],
+    })
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    # yt-dlp may add .mp3 extension
+    if os.path.exists(out_path + ".mp3"):
+        return out_path + ".mp3"
+    if os.path.exists(out_path):
+        return out_path
+    for f in os.listdir(os.path.dirname(out_path)):
+        full = os.path.join(os.path.dirname(out_path), f)
+        if f.startswith(os.path.basename(out_path).split(".")[0]):
+            return full
+    raise RuntimeError("Gagal mendownload audio.")
+
+
+def analyze_audio_engagement(url: str, top_n: int = 5) -> dict:
+    """Analyze video audio to find potentially engaging segments.
+
+    Uses audio energy (volume/activity) to detect high-engagement moments.
+    Returns video info and a list of top engaging regions with timestamps.
+    """
+    opts = _base_opts()
+    opts["extract_flat"] = False
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    title = info.get("title", "Unknown")
+    duration = info.get("duration") or 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = _download_audio(url, os.path.join(tmpdir, "audio"))
+
+        # Convert to 16kHz mono WAV for analysis
+        wav_path = os.path.join(tmpdir, "audio_16k.wav")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
+            capture_output=True, text=True,
+        )
+
+        # Load audio as numpy array
+        audio = whisper.load_audio(wav_path)
+        sr = 16000
+
+        # Analyze energy in 10-second windows
+        window_sec = 10
+        window_samples = window_sec * sr
+        energies = []
+        for i in range(0, len(audio) - window_samples, window_samples):
+            chunk = audio[i:i + window_samples]
+            rms = float(np.sqrt(np.mean(chunk ** 2)))
+            energies.append({
+                "start": i // sr,
+                "end": (i + window_samples) // sr,
+                "energy": rms,
+            })
+
+        if not energies:
+            return {"title": title, "duration": duration, "regions": [], "method": "audio"}
+
+        # Find threshold: segments above 1.5x average energy
+        avg_energy = sum(e["energy"] for e in energies) / len(energies)
+        threshold = avg_energy * 1.3
+        max_energy = max(e["energy"] for e in energies)
+
+        # Group adjacent high-energy segments
+        regions = []
+        current_region = None
+        for entry in energies:
+            if entry["energy"] >= threshold:
+                if current_region is None:
+                    current_region = {
+                        "start": entry["start"],
+                        "end": entry["end"],
+                        "peak_energy": entry["energy"],
+                        "total_energy": entry["energy"],
+                        "count": 1,
+                    }
+                else:
+                    current_region["end"] = entry["end"]
+                    current_region["total_energy"] += entry["energy"]
+                    current_region["count"] += 1
+                    if entry["energy"] > current_region["peak_energy"]:
+                        current_region["peak_energy"] = entry["energy"]
+            else:
+                if current_region is not None:
+                    regions.append(current_region)
+                    current_region = None
+
+        if current_region is not None:
+            regions.append(current_region)
+
+        # Sort by peak energy descending
+        regions.sort(key=lambda r: r["peak_energy"], reverse=True)
+        top_regions = regions[:top_n]
+
+        # Normalize peak values to 0-1 range for display
+        for region in top_regions:
+            region["peak_value"] = region["peak_energy"] / max_energy if max_energy > 0 else 0
+
+    return {
+        "title": title,
+        "duration": duration,
+        "uploader": info.get("uploader") or "Unknown",
+        "regions": top_regions,
+        "method": "audio",
+    }
+
+
+def generate_subtitles(url: str, language: str = "id") -> dict:
+    """Generate subtitles for a YouTube video using Whisper.
+
+    Returns video info and subtitle data (SRT format + segments).
+    """
+    opts = _base_opts()
+    opts["extract_flat"] = False
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    title = info.get("title", "Unknown")
+    duration = info.get("duration") or 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = _download_audio(url, os.path.join(tmpdir, "audio"))
+
+        # Use Whisper to transcribe
+        model = whisper.load_model("base")
+        result = model.transcribe(
+            audio_path,
+            language=language,
+            task="transcribe",
+            verbose=False,
+        )
+
+        segments = result.get("segments", [])
+
+        # Build SRT content
+        srt_lines = []
+        for i, seg in enumerate(segments, 1):
+            start = _format_srt_time(seg["start"])
+            end = _format_srt_time(seg["end"])
+            text = seg["text"].strip()
+            srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+
+        srt_content = "\n".join(srt_lines)
+
+        # Save SRT file
+        srt_id = uuid.uuid4().hex[:8]
+        srt_path = os.path.join(DOWNLOADS_DIR, f"subtitle_{srt_id}.srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
+
+    return {
+        "title": title,
+        "duration": duration,
+        "srt_path": srt_path,
+        "segments": segments,
+        "text": result.get("text", ""),
+    }
+
+
+def _format_srt_time(seconds: float) -> str:
+    """Format seconds to SRT timestamp (HH:MM:SS,mmm)."""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def download_and_clip(url: str, start_sec: int, end_sec: int) -> str:

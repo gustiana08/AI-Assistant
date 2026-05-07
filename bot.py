@@ -15,11 +15,13 @@ from telegram.ext import (
 )
 
 from clipper import (
+    analyze_audio_engagement,
     analyze_most_replayed,
     cleanup_file,
     download_and_clip,
     extract_video_info,
     format_duration,
+    generate_subtitles,
     parse_timestamp,
 )
 
@@ -50,7 +52,10 @@ HELP_TEXT = (
     "• Maksimal durasi clip: 10 menit\n"
     "• Maksimal ukuran file: 50MB\n\n"
     "*Analisis:*\n"
-    "Kirim `/analyze <URL>` untuk melihat bagian video yang paling banyak diputar\\!\n\n"
+    "Kirim `/analyze <URL>` untuk melihat bagian video yang paling banyak diputar\\!\n"
+    "\\(Jika data heatmap tidak ada, bot akan analisis audio secara otomatis\\)\n\n"
+    "*Subtitle:*\n"
+    "Kirim `/subtitle <URL>` untuk generate subtitle bahasa Indonesia otomatis\\!\n\n"
     "Atau cukup kirim link YouTube dan aku akan tanya detail clip\\-nya\\!"
 )
 
@@ -219,25 +224,50 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     duration = result["duration"]
     regions = result["regions"]
 
+    method = result.get("method", "heatmap")
+
+    if not regions and method != "audio":
+        # No heatmap data — fallback to audio analysis
+        await status_msg.edit_text(
+            "\U0001f50d Data heatmap tidak tersedia\\. Menganalisis audio video\\.\\.\\.\n"
+            "\\(Ini bisa memakan waktu beberapa menit\\)",
+            parse_mode="MarkdownV2",
+        )
+        try:
+            result = analyze_audio_engagement(url)
+            title = result["title"]
+            duration = result["duration"]
+            regions = result["regions"]
+            method = "audio"
+        except Exception as e:
+            logger.error("Audio analysis failed: %s", e)
+            await status_msg.edit_text("\u274c Gagal menganalisis audio video.")
+            return
+
     if not regions:
         await status_msg.edit_text(
             f"\U0001f4b9 *{_escape_md(title)}*\n"
             f"\u23f1 Durasi: {_escape_md(format_duration(duration))}\n\n"
-            f"\u274c Data 'most replayed' tidak tersedia untuk video ini\\.",
+            f"\u274c Tidak ditemukan bagian yang menonjol dari video ini\\.",
             parse_mode="MarkdownV2",
         )
         return
 
+    if method == "audio":
+        header = "\U0001f3b5 *Bagian paling aktif \\(analisis audio\\):*\n\n"
+    else:
+        header = "\U0001f525 *Bagian paling banyak diputar:*\n\n"
+
     lines = [
         f"\U0001f4ca *{_escape_md(title)}*\n",
         f"\u23f1 Durasi: {_escape_md(format_duration(duration))}\n\n",
-        f"\U0001f525 *Bagian paling banyak diputar:*\n\n",
+        header,
     ]
 
     for i, region in enumerate(regions, 1):
         start_str = format_duration(region["start"])
         end_str = format_duration(region["end"])
-        peak = region["peak_value"]
+        peak = region.get("peak_value", 0)
         bar_len = int(peak * 10)
         bar = "\u2588" * bar_len + "\u2591" * (10 - bar_len)
         lines.append(
@@ -253,6 +283,68 @@ async def analyze_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "".join(lines),
         parse_mode="MarkdownV2",
     )
+
+
+async def subtitle_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /subtitle command — generate Indonesian subtitles."""
+    if not context.args or len(context.args) < 1:
+        await update.message.reply_text(
+            "\u26a0\ufe0f Format: `/subtitle <URL>`\n"
+            "Contoh: `/subtitle https://youtu.be/dQw4w9WgXcQ`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+
+    if not YOUTUBE_RE.search(url):
+        await update.message.reply_text("\u274c URL YouTube tidak valid. Cek lagi link-nya.")
+        return
+
+    status_msg = await update.message.reply_text(
+        "\U0001f3a4 Mengenerate subtitle bahasa Indonesia\\.\\.\\.\n"
+        "\\(Ini memakan waktu beberapa menit tergantung durasi video\\)",
+        parse_mode="MarkdownV2",
+    )
+
+    srt_path = None
+    try:
+        result = generate_subtitles(url, language="id")
+        srt_path = result["srt_path"]
+        title = result["title"]
+        duration = result["duration"]
+        segments = result["segments"]
+
+        await status_msg.edit_text("\U0001f4e4 Mengirim file subtitle...")
+
+        caption = (
+            f"\U0001f4dd Subtitle: {title}\n"
+            f"\u23f1 Durasi: {format_duration(duration)}\n"
+            f"\U0001f4ac {len(segments)} segmen"
+        )
+
+        with open(srt_path, "rb") as srt_file:
+            await update.message.reply_document(
+                document=srt_file,
+                filename=f"subtitle_{YOUTUBE_RE.search(url).group(1)}.srt",
+                caption=caption,
+            )
+        await status_msg.delete()
+
+    except Exception as e:
+        logger.error("Subtitle generation failed: %s", e)
+        err_msg = str(e)
+        if "Sign in" in err_msg or "confirm you're not a bot" in err_msg:
+            await status_msg.edit_text(
+                "\u274c YouTube memblokir akses dari server ini\\."
+                " Video ini butuh *cookies* YouTube\\.",
+                parse_mode="MarkdownV2",
+            )
+        else:
+            await status_msg.edit_text("\u274c Gagal membuat subtitle. Coba lagi nanti.")
+    finally:
+        if srt_path:
+            cleanup_file(srt_path)
 
 
 async def handle_youtube_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -303,6 +395,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("clip", clip_command))
     app.add_handler(CommandHandler("analyze", analyze_command))
+    app.add_handler(CommandHandler("subtitle", subtitle_command))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_youtube_link)
     )
