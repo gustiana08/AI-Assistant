@@ -1,0 +1,4 @@
+python-telegram-bot==21.10
+yt-dlp>=2025.4.30
+openai-whisper>=20250625
+numpy>=1.26
